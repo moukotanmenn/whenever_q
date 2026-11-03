@@ -330,6 +330,9 @@
 				<button onclick="copyRoomCode()" style="width: auto; padding: 6px 14px; font-size: 13px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;">コピー</button>
 			</div>
 			<div style="display: flex; align-items: center; gap: 15px;">
+				<!-- 名簿ボタン -->
+				<button onclick="openStudentModal()" style="width: auto; padding: 6px 12px; font-size: 13px; background: #0ea5e9; color: white;">生徒名簿 (<span id="student-count-badge">0</span>人)</button>
+				
 				<span style="font-weight: bold; font-size: 14px; color: #334155;">
 					<span id="display-teacher-name">先生</span>
 				 先生</span>
@@ -491,6 +494,10 @@
 		}
 
 		currentRoomCode = code;
+		
+		// 参加した生徒の名前を登録
+		await set(ref(db, `rooms/${currentRoomCode}/students/${myName}`), true);
+		
 		document.getElementById("display-student-name").innerText = myName;
 		switchView("view-student");
 		initRoomListener();
@@ -610,6 +617,20 @@
 		const modal = document.getElementById("image-modal");
 		modal.style.display = "none";
 	};
+	
+	// 生徒名簿モーダルを開く
+	window.openStudentModal = function()
+	{
+		const modal = document.getElementById("student-modal");
+		if (modal) modal.style.display = "flex";
+	}
+	
+	// 生徒御名簿モーダルを閉じる
+	window.closeStudentModal = function()
+	{
+		const modal = document.getElementById("student-modal");
+		if (modal) modal.style.display = "none";
+	};
 
 	// 共感ボタン
 	window.likeQuestion = async function(qId)
@@ -696,121 +717,164 @@
 	{
 		// ルームのデータ監視
 		onValue(ref(db, 'rooms/' + currentRoomCode), (snapshot) => {
-		const data = snapshot.val();
-		if (!data) return;
+			const data = snapshot.val();
+			if (!data) return;
 
-		// 授業ステータス更新
-		isClassActive = data.active;
-		const statusEl = document.getElementById("student-status");
-		if (statusEl)
-		{
-			statusEl.innerText = isClassActive ? "【集計中】" : "【集計完了】";
-			statusEl.style.background = isClassActive ? "#dcfce7" : "#fee2e2";
-			statusEl.style.color = isClassActive? "#166534" : "#dc2626"
-		}
-		const sessionBtn = document.getElementById("btn-session");
-		if (sessionBtn)
-		{
-			sessionBtn.innerText = isClassActive ? "集計を終了する" : "集計を開始する";
-			sessionBtn.style.background = isClassActive ? "#dc3545" : "#28a745";
-		}
-
-		// 投票から自動集計
-		let counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
-		if (data.votes)
-		{
-			Object.values(data.votes).forEach(voteType => {
-				if (counts[voteType] !== undefined)
-				{
-					counts[voteType]++;
-				}
-			});
-		}
-
-		if (document.getElementById("stampChart"))
-		{
-			initStampChart();
-			if (stampChart)
+			// 授業ステータス更新
+			isClassActive = data.active;
+			const statusEl = document.getElementById("student-status");
+			if (statusEl)
 			{
-				stampChart.data.datasets[0].data = [counts[1], counts[2], counts[3], counts[4]];
-				stampChart.update();
+				statusEl.innerText = isClassActive ? "【集計中】" : "【集計完了】";
+				statusEl.style.background = isClassActive ? "#dcfce7" : "#fee2e2";
+				statusEl.style.color = isClassActive? "#166534" : "#dc2626"
+			}
+			const sessionBtn = document.getElementById("btn-session");
+			if (sessionBtn)
+			{
+				sessionBtn.innerText = isClassActive ? "集計を終了する" : "集計を開始する";
+				sessionBtn.style.background = isClassActive ? "#dc3545" : "#28a745";
 			}
 
-			const c1 = document.getElementById("count-1");
-			const c2 = document.getElementById("count-2");
-			const c3 = document.getElementById("count-3");
-			const c4 = document.getElementById("count-4");
+			// 投票から自動集計
+			let counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+			if (data.votes)
+			{
+				Object.values(data.votes).forEach(voteType => {
+					if (counts[voteType] !== undefined)
+					{
+						counts[voteType]++;
+					}
+				});
+			}
 
-			if (c1) c1.innerText = `よくわかる: ${counts[1]}票`;
-			if (c2) c2.innerText = `だいたい: ${counts[2]}票`;
-			if (c3) c3.innerText = `むずかしい: ${counts[3]}票`;
-			if (c4) c4.innerText = `わからない: ${counts[4]}票`;
-		}
-
-		// 質問一覧更新
-		const teacherQList = document.getElementById("teacher-questions");
-		const studentQList = document.getElementById("student-questions");
-		if (teacherQList) teacherQList.innerHTML = "";
-		if (studentQList) studentQList.innerHTML = "";
-
-		if (data.questions)
-		{
-			// いいね順に並び替え
-			let qArray = Object.entries(data.questions).map(([id, val]) => ({ id, ...val }));
-
-			// 共感数が多い順、新しい順に並び替え
-			qArray.sort((a, b) => {
-				if (b.likes !== a.likes)
+			if (document.getElementById("stampChart"))
+			{
+				initStampChart();
+				if (stampChart)
 				{
-					return b.likes - a.likes;
+					stampChart.data.datasets[0].data = [counts[1], counts[2], counts[3], counts[4]];
+					stampChart.update();
 				}
-				return b.id.localeCompare(a.id);
-			});
 
-			qArray.forEach(q => {
-				// 画像表示用パーツ
-				const imageHtml = q.image ? `<br><img src="${q.image}" class="thumbnail" onclick="openImageModal('${q.image}')">` : '';
+				const c1 = document.getElementById("count-1");
+				const c2 = document.getElementById("count-2");
+				const c3 = document.getElementById("count-3");
+				const c4 = document.getElementById("count-4");
+
+				if (c1) c1.innerText = `よくわかる: ${counts[1]}票`;
+				if (c2) c2.innerText = `だいたい: ${counts[2]}票`;
+				if (c3) c3.innerText = `むずかしい: ${counts[3]}票`;
+				if (c4) c4.innerText = `わからない: ${counts[4]}票`;
+			}
+
+			// 質問一覧更新
+			const teacherQList = document.getElementById("teacher-questions");
+			const studentQList = document.getElementById("student-questions");
+			if (teacherQList) teacherQList.innerHTML = "";
+			if (studentQList) studentQList.innerHTML = "";
+
+			if (data.questions)
+			{
+				// いいね順に並び替え
+				let qArray = Object.entries(data.questions).map(([id, val]) => ({ id, ...val }));
+
+				// 共感数が多い順、新しい順に並び替え
+				qArray.sort((a, b) => {
+					if (b.likes !== a.likes)
+					{
+						return b.likes - a.likes;
+					}
+					return b.id.localeCompare(a.id);
+				});
+
+				qArray.forEach(q => {
+					// 画像表示用パーツ
+					const imageHtml = q.image ? `<br><img src="${q.image}" class="thumbnail" onclick="openImageModal('${q.image}')">` : '';
 		
-				// 先生用の質問カード
-				const teacherCardHtml = `
-					<div class="question-card">
-						<strong>【${q.name}】</strong> ${q.text} <br>
-						${imageHtml}
-						<small>共感数: ${q.likes}</small>
-						<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
-					</div>
-				`;
+					// 先生用の質問カード
+					const teacherCardHtml = `
+						<div class="question-card">
+							<strong>【${q.name}】</strong> ${q.text} <br>
+							${imageHtml}
+							<small>共感数: ${q.likes}</small>
+							<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
+						</div>
+					`;
 
-				// 生徒用の質問カード
-				const canDelete = (q.name === myName);
-				const deleteButtonHtml = canDelete
-					? `<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>`
-					: '';
+					// 生徒用の質問カード
+					const canDelete = (q.name === myName);
+					const deleteButtonHtml = canDelete
+						? `<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>`
+						: '';
 	
-				const userLikes = data.questionLikes && data.questionLikes[q.id] && data.questionLikes[q.id][myName];
-				const likeBtnColor = userLikes ? "background: #2563ed; color: white;" : "background: #f1f5f9; color: #334155;";
-				const likeBtnText = userLikes ? "共感済み" : "共感する";
+					const userLikes = data.questionLikes && data.questionLikes[q.id] && data.questionLikes[q.id][myName];
+					const likeBtnColor = userLikes ? "background: #2563ed; color: white;" : "background: #f1f5f9; color: #334155;";
+					const likeBtnText = userLikes ? "共感済み" : "共感する";
 	
-				const studentCardHtml = `
-					<div class="question-card">
-						${q.text} <br>
-						${imageHtml}
-						<small>共感数: ${q.likes}</small>
-						<button onclick="likeQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; ${likeBtnColor}">${likeBtnText}</button>
-						${deleteButtonHtml}
-					</div>
-				`;
+					const studentCardHtml = `
+						<div class="question-card">
+							${q.text} <br>
+							${imageHtml}
+							<small>共感数: ${q.likes}</small>
+							<button onclick="likeQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; ${likeBtnColor}">${likeBtnText}</button>
+							${deleteButtonHtml}
+						</div>
+					`;
 
-				if (teacherQList) teacherQList.innerHTML += teacherCardHtml;
-				if (studentQList) studentQList.innerHTML += studentCardHtml;
-			});
-		}
-	});
-}
+					if (teacherQList) teacherQList.innerHTML += teacherCardHtml;
+					if (studentQList) studentQList.innerHTML += studentCardHtml;
+				});
+			}
+			
+			// 参加生徒一覧と人数バッジのリアルタイム更新
+			const studentListBox = document.getElementById("student-list-box");
+			const studentCountBadge = document.getElementById("student-count-badge");
+			
+			if (data.students)
+			{
+				const studentsArray = Object.keys(data.students);
+				if (studentCountBadge) studentCountBadge.innerText = studentsArray.length;
+				
+				if (studentListBox)
+				{
+					studentListBox.innerHTML = "";
+					studentsArray.forEach(stName => {
+						const item = document.createElement("div");
+						item.innerText = `👤 ${stName}`;
+						item.style.cssText = "background: #f1f5f9; color: #334155; padding: 8px 12px; border-radius: 6px; font-size: 14px; font-weight: bold;";
+						studentListBox.appendChild(item);
+					});
+				}
+			}
+			else
+			{
+				if (studentCountBadge) studentCountBadge.innerText = "0";
+				if (studentListBox)
+				{
+					studentListBox.innerHTML = '<span style="color: #94a3b8; font-size: 14px;">まだ誰も参加していません</span>';
+				}
+			}
+		});
+	}
 </script>
 	<!-- 画像拡大表示用 -->
 	<div id="image-modal" onclick="closeImageModal()">
 		<img id="modal-img" src="">
+	</div>
+	
+	<!-- 生徒名簿用 -->
+	<div id="student-modal" style="display: none; position: fixed; z-index: 1000; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); justify-content: center; align-items: center;">
+		<div style="background: white; padding: 25px; border-radius: 12px; width: 350px; max-width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.15);">
+			<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+				<h3 style="margin: 0; color: #0f172a; font-size: 18px;">参加生徒一覧</h3>
+				<button onclick="closeStudentModal()" style="width: auto; padding: 4px 10px; font-size: 12px; background: #cbd5e1; color: #334155;">閉じる</button>
+			</div>
+			<!-- 生徒の名前が並ぶリスト -->
+			<div id="student-list-box" style="display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; text-align: left;">
+				<span style="color: #94a3b8; font-size: 14px;">まだ誰も参加していません</span>
+			</div>
+		</div>
 	</div>
 </body>
 </html>
