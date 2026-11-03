@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+	<meta charset="UTF-8"></meta>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"></meta>
+	<!-- Chart.js ライブラリ -->
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>Whenever Q</title>
+    <style>
+		/* 画面全体 */
+		body
+		{
+			font-family: sans-serif;
+			margin: 0;
+			padding: 20px;
+			background: #f0f2f5;
+			color: #333;
+		}
+		/* カード */
+		.container
+		{
+			width: 98%;
+			max-width: none;
+			min-height: 94vh;
+			margin: 0 auto;
+			background: #fff;
+			padding: 20px;
+			border-radius: 12px;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+			box-sizing: border-box;
+			display: flex;
+			flex-direction: column;
+		}
+		/* 表示画面を制限 */
+		.hidden
+		{
+			display: none !important;
+		}
+
+		/* ログイン画面のデザイン */
+		/* 画面サイズ */
+		.login-box
+		{
+			max-width: 1000px;
+			margin: 40px auto;
+			text-align: center;
+			padding: 20px;
+		}
+		/* 選択肢の並び */
+		.mode-grid
+		{
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 30px;
+			text-align: left;
+			margin-top: 25px;
+		}
+		/* 選択肢の形 */
+		.mode-card
+		{
+			border-radius: 20px;
+			padding: 30px;
+			display: flex;
+			flex-direction: column;
+			justify-content: space-between;
+		}
+		/* 先生用 */
+		.mode-card.teacher
+		{
+			background: #eff6ff;
+			border: 1.5px solid #bfdbfe;
+		}
+		/* 生徒用 */
+		.mode-card.student
+		{
+			background: #ecfdf5;
+			border: 1.5px solid #a7f3d0;
+		}
+		/* カードのタイトル文字 */
+		.mode-card h3
+		{
+			margin-bottom: 8px;
+			font-size: 22px !important;
+			color: #0f172a;
+		}
+		.mode-card p
+		{
+			font-size: 15px !important;
+			color: #64748b;
+		}
+
+		/* テキスト入力欄とボタン */
+		input, button
+		{
+			width: 100%;
+			padding: 12px;
+			margin: 8px 0;
+			font-size: 16px;
+			border: 1px solid #ccc;
+			border-radius: 8px;
+			box-sizing: border-box;
+		}
+		/* ボタン */
+		button
+		{
+			background: #007bff;
+			color: white;
+			border: none;
+			cursor: pointer;
+			font-weight: bold;
+		}
+		/* マウスカーソルを合わせた時 */
+		button:hover
+		{
+			background: #0056b3;
+		}
+		
+		/* 先生用画面 */
+		.teacher-top
+		{
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			background: #fff;
+			padding: 15px 20px;
+			border-radius: 12px;
+			margin-bottom: 20px;
+			box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+		}
+		/* 左右に分ける */
+		.layout-grid
+		{
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 20px;
+			align-items: stretch;
+			flex-grow: 1;
+		}
+		.panel
+		{
+			background: #fafafa;
+			padding: 20px;
+			border-radius: 14px;
+			border: 1px solid #f1f5f9;
+			display: flex;
+			flex-direction: column;
+			box-sizing: border-box;
+			justify-content: space-between;
+		}
+		/* 質問スクロール */
+		.chat-scroll-area
+		{
+			height: 480px !important;
+			max-height: 480px !important;
+			min-height: 480px !important;
+			overflow-y: auto;
+			padding-right: 5px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+		}
+		/* ルーム番号枠 */
+		.room-box
+		{
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			background: #eff6ff;
+			padding: 6px 15px;
+			border-radius: 8px;
+			border: 1.5px solid #bfdbfe;
+		}
+		/* ルーム番号表示 */
+		.room-num-text
+		{
+			font-size: 24px;
+			font-weight: 800;
+			color: #2563ed;
+			letter-spacing: 2px;
+		}
+
+		/* 生徒用スタンプ */
+		.stamp-grid
+		{
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 10px; margin: 15px 0;
+		}
+		.stamp-btn
+		{
+			background: #28a745;
+			font-size: 14px;
+		}
+		.stamp-btn:nth-child(2)
+		{
+			background: #17a2b8;
+		}
+		.stamp-btn:nth-child(3)
+		{
+			background: #ffc107;
+			color: #333;
+		}
+		.stamp-btn:nth-child(4)
+		{
+			background: #dc3545;
+		}
+
+		/* 質問 */
+		.question-card
+		{
+			background: #ffffff;
+			border: 1px solid #e2e8f0;
+			border-left: 5px solid #2563ed;
+			padding: 12px 16px;
+			margin-bottom: 12px;
+			border-radius: 8px;
+			box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+		}
+
+		/* スタンプ集計 */
+		.graph-box
+		{
+			background: #e9ecef;
+			padding: 15px;
+			border-radius: 8px;
+			margin: 15px 0;
+		}
+		
+		/* サムネ画像のスタイル */
+		.thumbnail
+		{
+			max-width: 100%;
+			max-height: 120px;
+			border-radius: 6px;
+			margin-top: 8px;
+			cursor: pointer;
+			transition: opacity 0.2s;
+			display: block;
+		}
+		.thumbnail:hover
+		{
+			opacity: 0.85;
+		}
+		
+		/* 拡大表示用背景 */
+		#image-modal
+		{
+			display: none;
+			position: fixed;
+			z-index: 1000;
+			top: 0;
+			left: 0;
+			width: 100%;
+			height: 100%;
+			background: rgba(0, 0, 0, 0.8);
+			justify-content: center;
+			align-items: center;
+		}
+		
+		/* 拡大表示された画像本体 */
+		#image-modal img
+		{
+			max-width: 90%;
+			max-height: 90%;
+			border-radius: 8px;
+			box-shadow: 0 4px 25px rgba(0,0,0,0.5);
+		}
+	</style>
+</head>
+	
+<body>
+<div class="container">
+	
+	<!-- ログイン画面 -->
+    <div id="view-login" class="login-box">
+		
+		<!-- タイトルとサブタイトル -->
+        <h2 style="font-size: 32px; margin-bottom: 8px;">Whenever Q</h2>
+		<p style="color: #64748b; margin-bottom: 35px !important; font-size: 16px !important;">名前を入力して、授業に参加しよう。</p>
+		
+		<!-- 表示名入力 -->
+		<div style="text-align: left; margin-bottom: 25px;">
+			<label style="display: block; font-weight: bold; font-size: 14px; margin-bottom: 6px; color: #334155;">表示名</label>
+			<input type="text" id="input-name" placeholder="例: 山田 太郎" style="padding: 16px !important; font-size: 18px !important;"></input>
+		</div>
+		
+		<!-- 選択肢の見出し -->
+		<div style="font-size: 16px; font-weight: bold; text-align: left; color: #0f172a; margin-bottom: 10px;">利用方法を選択</div>
+		
+		<!-- 左右のカードを配置 -->
+		<div class="mode-grid">
+
+			<!-- 左側：先生 -->
+			<div class="mode-card teacher">
+				<div>
+					<h3>先生として利用</h3>
+					<p>新しい授業ルームを作成</p>
+				</div>
+
+				<!-- ルーム作成ボタン -->
+				<button onclick="loginAsTeacher()" style="background: #2563ed; margin-top: 20px; padding: 16px !important; font-size: 18px !important;">ルームを作成 →</button>
+			</div>
+
+			<!-- 右側：生徒 -->
+			<div class="mode-card student">
+				<div>
+					<h3>生徒として利用</h3>
+					<p>授業ルームに参加</p>
+					<!-- 生徒用ルーム番号入力欄 -->
+					<input type="text" id="input-roomcode" placeholder="4桁のルーム番号" style="margin-top: 12px; margin-bottom: 0; background: #fff; padding: 16px !important; font-size: 18px !important;"></input>
+				</div>
+
+				<!-- 生徒用ルーム参加ボタン -->
+				<button onclick="loginAsStudent()" style="background: #0d9488; margin-top: 10px; padding: 16px !important; font-size: 18px !important;">ルームに参加 →</button>
+			</div>
+			
+		</div>
+    </div>
+
+    <!-- 先生画面 -->
+    <div id="view-teacher" class="hidden">
+		
+		<!-- 上部バー -->
+		<div class="teacher-top">
+			<div class="room-box">
+				<span style="font-size: 14px; color: #64748b; font-weight: bold;">ルーム番号</span>
+				<span id="display-roomcode" class="room-num-text">----</span>
+				
+				<!-- コピーボタン -->
+				<button onclick="copyRoomCode()" style="width: auto; padding: 6px 14px; font-size: 13px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;">コピー</button>
+			</div>
+			<div style="display: flex; align-items: center; gap: 15px;">
+				<span style="font-weight: bold; font-size: 14px; color: #334155;">
+					<span id="display-teacher-name">先生</span>
+				 先生</span>
+				
+				<!-- 退出ボタン -->
+				<button onclick="logout()" style="width: auto; padding: 6px 12px; font-size: 13px; background: #fee2e2; color: #dc2626;">退出</button>
+			</div>
+		</div>
+		
+		<!-- 左右のメインエリア -->
+		<div class="layout-grid">
+			
+			<!-- 左パネル：スタンプ集計 -->
+			<div class="panel">
+				<h3 style="margin-top: 0; color: #0f172a;">スタンプ集計</h3>
+				<div class="graph-box" style="background: #fff; border: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px">
+					<!-- グラフ本体 -->
+					<div style="position: relative; width: 100%; height: 180px;">
+						<canvas id="stampChart"></canvas>
+					</div>
+
+					<!-- グラフの下に投票数を並べる -->
+					<div style="display: grid; gri-template-columns: 1fr 1fr; gap: 8px 20px; width: 100%; margin-top: 15px; font-size: 14px; font-weight: bold; text-align: center">
+						<div style="color: #10b981;" id="count-1">よくわかる: 0票</div>
+						<div style="color: #06b6d4;" id="count-2">だいたい: 0票</div>
+						<div style="color: #f59e0b;" id="count-3">むずかしい: 0票</div>
+						<div style="color: #ef4444;" id="count-4">わからない: 0票</div>
+					</div>
+				</div>
+				
+				<!-- 集計開始・終了ボタン -->
+				<button onclick="toggleSession()" id="btn-session" style="width: 100%; padding: 16px; background: #10b981; color: white; font-size: 18px; margin-top: 15px;">集計を開始する</button>
+			</div>
+			
+			<!-- 右パネル：質問一覧 -->
+			<div class="panel">
+				<h3 style="margin-top: 0px; color: #0f172a;">生徒からの質問一覧</h3>
+				
+				<!-- スクロールエリア適用 -->
+				<div id="teacher-questions" class="chat-scroll-area"></div>
+			</div>
+			
+		</div>
+    </div>
+
+    <!-- 生徒画面 -->
+	<div id="view-student" class="hidden">
+		<!-- 上部バー -->
+		<div class="teacher-top">
+			<div style="display: flex; align-items: center; gap: 10px;">
+				<span style="font-size: 16px; font-weight: bold; color: #1e293b;">Whenever Q</span>
+			</div>
+			<div style="display: flex; align-items: center; gap: 15px;">
+				<span style="font-weight: bold; font-size: 14px; color: #334155;">
+					<span id="display-student-name">生徒</span> さん
+				</span>
+
+				<button onclick="logout()" style="width: auto; padding: 6px 12px; font-size: 13px; background: #fee2e2; color: #dc2626;">退出</button>
+			</div>
+		</div>
+		
+		<!-- 左右のメインエリア -->
+		<div class="layout-grid">
+			
+			<!-- 左パネル：スタンプ送信　＆　質問送信 -->
+			<div class="panel">
+				<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
+					<h3 style="margin: 0; color: #0f172a; font-size: 16px;">スタンプで気持ちを伝えよう!</h3>
+					<!-- 授業ステータス -->
+					<span id="student-status" style="font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 6px; background: #fee2e2; color: #dc2626;">【集計完了】</span>
+				</div>
+				<div class="stamp-grid">
+					<button class="stamp-btn" style="background: #dcfce7; color: #166534; border: 1.5px solid #86efac;" onclick="sendStamp(1)">よくわかる</button>
+					<button class="stamp-btn" style="background: #e0f2fe; color: #0369a1; border: 1.5px solid #7dd3fc;" onclick="sendStamp(2)">だいたい</button>
+					<button class="stamp-btn" style="background: #fef9c3; color: #854d0e; border: 1.5px solid #fde047;" onclick="sendStamp(3)">むずかしい</button>
+					<button class="stamp-btn" style="background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5;" onclick="sendStamp(4)">わからない</button>
+				</div>
+
+				<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0 20px 0;"></hr>
+				<h3 style="margin-top: 0; color: #0f172a; font-size: 16px;">質問を送信する</h3>
+				<input type="text" id="input-question" placeholder="質問内容を入力..." style="background: #fff;"></input>
+				<!-- 画像選択用のファイル入力欄を追加 -->
+				<div style="margin: 8px 0; text-align: left;">
+					<label style="font-size: 12px; color: #64748b; display: block; margin-bottom: 4px;">画像ファイルを添付</label>
+					<input type="file" id="input-image" accept="image/*" style="padding: 6px; font-size: 14px; background: #fff;"></input>
+				</div>
+				<button onclick="sendQuestion()" style="background: #2563ed; margin-top: 8px;">質問を送信</button>
+			</div>
+			
+			<!-- 右パネル：質問一覧 -->
+			<div class="panel">
+				<h3 style="margin-top: 0; color: #0f172a; font-size: 16px;">みんなの質問</h3>
+				<div id="student-questions" class="chat-scroll-area"></div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<!-- Firebase SDK (Modular v10) -->
+<script type="module">
+	import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+	import { getDatabase, ref, set, get, update, onValue, push, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+	const firebaseConfig =
+	{
+		apiKey: "AIzaSyCZBPojaMKRntReAM8L88rzGEeRIZoU6do",
+		authDomain: "class-feedback-417d0.firebaseapp.com",
+		projectId: "class-feedback-417d0",
+		storageBucket: "class-feedback-417d0.firebasestorage.app",
+		messagingSenderId: "527302533433",
+		appId: "1:527302533433:web:e160fb7b06cd923da908e8"
+	};
+
+	const app = initializeApp(firebaseConfig);
+	const db = getDatabase(app);
+
+	let currentRoomCode = null;
+	let myName = "";
+	let isClassActive = false;
+	let stampChart = null;
+
+	// 先生としてログイン
+	window.loginAsTeacher = async function()
+	{
+		myName = document.getElementById("input-name").value.trim() || "先生";
+		currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4桁のランダム数字
+
+		// 部屋の初期データ作成
+		await set(ref(db, 'rooms/' + currentRoomCode),{
+			active: false,
+			stamps: { 1: 0, 2: 0, 3: 0, 4: 0 }
+		});
+
+		document.getElementById("display-roomcode").innerText = currentRoomCode;
+		document.getElementById("display-teacher-name").innerText = myName;
+		switchView("view-teacher");
+		initRoomListener();
+	};
+
+	// 生徒としてログイン
+	window.loginAsStudent = async function()
+	{
+		myName = document.getElementById("input-name").value.trim() || "名無しさん";
+		const code = document.getElementById("input-roomcode").value.trim();
+	
+		if (!code)
+		{
+			alert("4桁のルーム番号を入力してください");
+			return;
+		}
+
+		const roomRef = ref(db, 'rooms/' + code);
+		const snapshot = await get(roomRef);
+
+		if (!snapshot.exists())
+		{
+			alert("指定されたルームが見つかりません。");
+			return;
+		}
+
+		currentRoomCode = code;
+		document.getElementById("display-student-name").innerText = myName;
+		switchView("view-student");
+		initRoomListener();
+	};
+
+	// 退出したとき
+	window.logout = function()
+	{
+		currentRoomCode = null;
+		switchView("view-login");
+	};
+
+	// ルーム番号のコピー
+	window.copyRoomCode = function()
+	{
+		if (!currentRoomCode) return;
+		navigator.clipboard.writeText(currentRoomCode).then(() => {
+			alert("ルーム番号" + currentRoomCode + " をコピーしました");
+		});
+	};
+
+	// スタンプ集計
+	window.toggleSession = async function()
+	{
+		isClassActive = !isClassActive;
+		
+		// 集計開始時にデータをリセット
+		const updateData =  { active: isClassActive };
+		if (isClassActive)
+		{
+			updateData.votes = null;
+			updateData.stamps = { 1: 0, 2:0, 3:0, 4:0, };
+		}
+		
+		await update(ref(db, 'rooms/' + currentRoomCode), updateData);
+	};
+
+	// スタンプ送信
+	window.sendStamp = async function(type)
+	{
+		if (!isClassActive)
+		{
+			alert("現在はスタンプ受付時間外です。");
+			return;
+		}
+		
+		// 自分の名前で投票を保存
+		const myVoteRef = ref(db, `rooms/${currentRoomCode}/votes/${myName}`);
+		await set(myVoteRef, type);
+		
+		alert("スタンプを送信しました");
+	};
+	
+	// 質問送信
+	window.sendQuestion = async function()
+	{
+		const text = document.getElementById("input-question").value.trim();
+		const imageInput = document.getElementById("input-image");
+		
+		if (!text && imageInput.files.length === 0) return; // テキストでも画像でもなければなにもなし
+		
+		const questionsRef = ref(db, `rooms/${currentRoomCode}/questions`);
+		
+		// 画像が選択されている場合の処理
+		if(imageInput.files.length > 0)
+		{
+			const file = imageInput.files[0];
+			const reader = new FileReader();
+			
+			reader.onload = async function(e)
+			{
+				const base64Image = e.target.result;
+				
+				// テキストと画像を一緒に保存
+				await push(questionsRef, {
+					name: myName,
+					text: text,
+					image: base64Image,
+					likes: 0
+				});
+				
+				// 入力欄をクリア
+				document.getElementById("input-question").value = "";
+				imageInput.value = "";
+			};
+			
+			reader.readAsDataURL(file);
+		}
+		else
+		{
+			// 画像がなければテキストのみ保存
+			await push(questionsRef, {
+				name: myName,
+				text: text,
+				image: null,
+				likes: 0
+			});
+			document.getElementById("input-question").value = "";
+		}
+	};
+	
+	// 画像を拡大表示
+	window.openImageModal = function(imgSrc)
+	{
+		const modal = document.getElementById("image-modal");
+		const modalImg = document.getElementById("modal-img");
+		if (modal && modalImg)
+		{
+			modalImg.src = imgSrc;
+			modal.style.display = "flex";
+		}
+	};
+	
+	// 拡大を閉じて元に戻す
+	window.closeImageModal = function()
+	{
+		const modal = document.getElementById("image-modal");
+		modal.style.display = "none";
+	};
+
+	// 共感ボタン
+	window.likeQuestion = async function(qId)
+	{
+		// いいねしているかの確認
+		const likeRef = ref(db, `rooms/${currentRoomCode}/questionLikes/${qId}/${myName}`);
+		const qRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}`);
+		
+		const snapshot = await get(likeRef);
+		const hasLiked = snapshot.exists() && snapshot.val() === true;
+
+		// いいね数を増減
+		await runTransaction(qRef, (question) => {
+			if (question)
+			{
+				if (hasLiked)
+				{
+					question.likes = Math.max(0, (question.likes || 1) - 1);
+				}
+				else
+				{
+					question.likes = (question.likes || 0) + 1;
+				}
+			}
+			return question;
+		});
+
+		// いいね状態を保存・削除
+		if (hasLiked)
+		{
+			await remove(likeRef);
+		}
+		else
+		{
+			await set(likeRef, true);
+		}
+	};
+
+	// 質問の削除
+	window.deleteQuestion = async function(qId)
+	{
+		const qRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}`);
+		await remove(qRef);
+	};
+	
+	// 表示する画面について
+	function switchView(viewId)
+	{
+		document.getElementById("view-login").classList.add("hidden");
+		document.getElementById("view-teacher").classList.add("hidden");
+		document.getElementById("view-student").classList.add("hidden");
+		document.getElementById(viewId).classList.remove("hidden");
+	}
+
+	// スタンプ集計のグラフ
+	function initStampChart()
+	{
+		const ctx = document.getElementById('stampChart');
+		if (!ctx) return;
+		if (stampChart) return;
+
+		stampChart = new Chart(ctx, {
+			type: 'doughnut',
+			data:
+			{
+				labels: ['よくわかる', 'だいたい', 'むずかしい', 'わからない'],
+				datasets: [{
+				data: [0, 0, 0, 0],
+				backgroundColor: ['#10b981', '#06b6d4', '#f59e0b', '#ef4444'],
+				borderWidth: 2
+				}]
+			},
+			options:
+			{
+			responsive: true,
+			maintainAspectRatio: false,
+			plugins: { legend: { display: false } }
+			}
+		});
+	}
+
+	// その他表示
+	function initRoomListener()
+	{
+		// ルームのデータ監視
+		onValue(ref(db, 'rooms/' + currentRoomCode), (snapshot) => {
+		const data = snapshot.val();
+		if (!data) return;
+
+		// 授業ステータス更新
+		isClassActive = data.active;
+		const statusEl = document.getElementById("student-status");
+		if (statusEl)
+		{
+			statusEl.innerText = isClassActive ? "【集計中】" : "【集計完了】";
+			statusEl.style.background = isClassActive ? "#dcfce7" : "#fee2e2";
+			statusEl.style.color = isClassActive? "#166534" : "#dc2626"
+		}
+		const sessionBtn = document.getElementById("btn-session");
+		if (sessionBtn)
+		{
+			sessionBtn.innerText = isClassActive ? "集計を終了する" : "集計を開始する";
+			sessionBtn.style.background = isClassActive ? "#dc3545" : "#28a745";
+		}
+
+		// 投票から自動集計
+		let counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+		if (data.votes)
+		{
+			Object.values(data.votes).forEach(voteType => {
+				if (counts[voteType] !== undefined)
+				{
+					counts[voteType]++;
+				}
+			});
+		}
+
+		if (document.getElementById("stampChart"))
+		{
+			initStampChart();
+			if (stampChart)
+			{
+				stampChart.data.datasets[0].data = [counts[1], counts[2], counts[3], counts[4]];
+				stampChart.update();
+			}
+
+			const c1 = document.getElementById("count-1");
+			const c2 = document.getElementById("count-2");
+			const c3 = document.getElementById("count-3");
+			const c4 = document.getElementById("count-4");
+
+			if (c1) c1.innerText = `よくわかる: ${counts[1]}票`;
+			if (c2) c2.innerText = `だいたい: ${counts[2]}票`;
+			if (c3) c3.innerText = `むずかしい: ${counts[3]}票`;
+			if (c4) c4.innerText = `わからない: ${counts[4]}票`;
+		}
+
+		// 質問一覧更新
+		const teacherQList = document.getElementById("teacher-questions");
+		const studentQList = document.getElementById("student-questions");
+		if (teacherQList) teacherQList.innerHTML = "";
+		if (studentQList) studentQList.innerHTML = "";
+
+		if (data.questions)
+		{
+			// いいね順に並び替え
+			let qArray = Object.entries(data.questions).map(([id, val]) => ({ id, ...val }));
+
+			// 共感数が多い順、新しい順に並び替え
+			qArray.sort((a, b) => {
+				if (b.likes !== a.likes)
+				{
+					return b.likes - a.likes;
+				}
+				return b.id.localeCompare(a.id);
+			});
+
+			qArray.forEach(q => {
+				// 画像表示用パーツ
+				const imageHtml = q.image ? `<br><img src="${q.image}" class="thumbnail" onclick="openImageModal('${q.image}')">` : '';
+		
+				// 先生用の質問カード
+				const teacherCardHtml = `
+					<div class="question-card">
+						<strong>【${q.name}】</strong> ${q.text} <br>
+						${imageHtml}
+						<small>共感数: ${q.likes}</small>
+						<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
+					</div>
+				`;
+
+				// 生徒用の質問カード
+				const canDelete = (q.name === myName);
+				const deleteButtonHtml = canDelete
+					? `<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>`
+					: '';
+	
+				const userLikes = data.questionLikes && data.questionLikes[q.id] && data.questionLikes[q.id][myName];
+				const likeBtnColor = userLikes ? "background: #2563ed; color: white;" : "background: #f1f5f9; color: #334155;";
+				const likeBtnText = userLikes ? "共感済み" : "共感する";
+	
+				const studentCardHtml = `
+					<div class="question-card">
+						${q.text} <br>
+						${imageHtml}
+						<small>共感数: ${q.likes}</small>
+						<button onclick="likeQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; ${likeBtnColor}">${likeBtnText}</button>
+						${deleteButtonHtml}
+					</div>
+				`;
+
+				if (teacherQList) teacherQList.innerHTML += teacherCardHtml;
+				if (studentQList) studentQList.innerHTML += studentCardHtml;
+			});
+		}
+	});
+}
+</script>
+	<!-- 画像拡大表示用 -->
+	<div id="image-modal" onclick="closeImageModal()">
+		<img id="modal-img" src="">
+	</div>
+</body>
+</html>
