@@ -354,12 +354,28 @@
 						<canvas id="stampChart"></canvas>
 					</div>
 
-					<!-- グラフの下に投票数を並べる -->
-					<div style="display: grid; gri-template-columns: 1fr 1fr; gap: 8px 20px; width: 100%; margin-top: 15px; font-size: 14px; font-weight: bold; text-align: center">
-						<div style="color: #10b981;" id="count-1">よくわかる: 0票</div>
-						<div style="color: #06b6d4;" id="count-2">だいたい: 0票</div>
-						<div style="color: #f59e0b;" id="count-3">むずかしい: 0票</div>
-						<div style="color: #ef4444;" id="count-4">わからない: 0票</div>
+					<!-- グラフの下に投票数と名前リストを表示 -->
+					<div style="display: grid; gri-template-columns: 1fr 1fr; gap: 12px; width: 100%; margin-top: 15px; font-size: 13px; text-align: left">
+						<div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px; border-radius: 6px;">
+							<div style="color: #10b981; font-weight: bold; margin-bottom: 4px;" id="count-1">よくわかる: 0票</div>
+							<div id="voters-1" style="color: #334155; font-size: 12px; min-height: 20px;">-</div>
+						</div>
+						
+						<div style="background: #ecfeff; border: 1px solid #a5f3fc; padding: 8px; border-radius: 6px;">
+							<div style="color: #06b6d4; font-weight: bold; margin-bottom: 4px;" id="count-2">だいたい: 0票</div>
+							<div id="voters-2" style="color: #334155; font-size: 12px; min-height: 20px;">-</div>
+						</div>
+						
+						<div style="background: #fffbeb; border: 1px solid #fde68a; padding: 8px; border-radius: 6px;">
+							<div style="color: #f59e0b; font-weight: bold; margin-bottom: 4px;" id="count-3">むずかしい: 0票</div>
+							<div id="voters-3" style="color: #334155; font-size: 12px; min-height: 20px;">-</div>
+						</div>
+						
+						<div style="background: #fef2f2; border: 1px solid #fecaca; padding: 8px; border-radius: 6px;">
+							<div style="color: #ef4444; font-weight: bold; margin-bottom: 4px;" id="count-4">わからない: 0票</div>
+							<div id="voters-4" style="color: #334155; font-size: 12px; min-height: 20px;">-</div>
+						</div>
+						
 					</div>
 				</div>
 				
@@ -434,7 +450,7 @@
 <!-- Firebase SDK (Modular v10) -->
 <script type="module">
 	import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-	import { getDatabase, ref, set, get, update, onValue, push, remove, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+	import { getDatabase, ref, set, get, update, onValue, push, remove, runTransaction, onDisconnect } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
 	const firebaseConfig =
 	{
@@ -496,7 +512,14 @@
 		currentRoomCode = code;
 		
 		// 参加した生徒の名前を登録
-		await set(ref(db, `rooms/${currentRoomCode}/students/${myName}`), true);
+		const studentRef = ref(db, `rooms/${currentRoomCode}/students/${myName}`);
+		await set(studentRef, true);
+		
+		// 切断時に名簿から削除
+		onDisconnect(studentRef).remove();
+		
+		// 切断時にスタンプ投票を削除
+		onDisconnect(ref(db, `rooms/${currentRoomCode}/votes/${myName}`)).remove();
 		
 		document.getElementById("display-student-name").innerText = myName;
 		switchView("view-student");
@@ -504,8 +527,13 @@
 	};
 
 	// 退出したとき
-	window.logout = function()
+	window.logout = async function()
 	{
+		if (currentRoomCode && myName)
+		{
+			await remove(ref(db, `rooms/${currentRoomCode}/students/${myName}`));
+			await remove(ref(db, `rooms/${currentRoomCode}/votes/${myName}`));
+		}
 		currentRoomCode = null;
 		switchView("view-login");
 	};
@@ -738,12 +766,15 @@
 
 			// 投票から自動集計
 			let counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+			let voters = { 1: [], 2: [], 3: [], 4: [] };
+			
 			if (data.votes)
 			{
-				Object.values(data.votes).forEach(voteType => {
+				Object.entries(data.votes).forEach(([stName, voteType]) => {
 					if (counts[voteType] !== undefined)
 					{
 						counts[voteType]++;
+						voters[voteType].push(stName);
 					}
 				});
 			}
@@ -756,16 +787,27 @@
 					stampChart.data.datasets[0].data = [counts[1], counts[2], counts[3], counts[4]];
 					stampChart.update();
 				}
-
-				const c1 = document.getElementById("count-1");
-				const c2 = document.getElementById("count-2");
-				const c3 = document.getElementById("count-3");
-				const c4 = document.getElementById("count-4");
-
-				if (c1) c1.innerText = `よくわかる: ${counts[1]}票`;
-				if (c2) c2.innerText = `だいたい: ${counts[2]}票`;
-				if (c3) c3.innerText = `むずかしい: ${counts[3]}票`;
-				if (c4) c4.innerText = `わからない: ${counts[4]}票`;
+				
+				for (let i = 1; i <= 4; i++)
+				{
+					const countEl = document.getElementById(`count-${i}`);
+					const votersEl = document.getElementById(`voters-${i}`);
+					
+					const labelName = ["", "よくわかる", "だいたい", "むずかしい", "わからない"][i];
+					if (countEl) countEl.innerText = `${labelName}: ${counts[i]}票`;
+					
+					if (votersEl)
+					{
+						if (voters[i].length > 0)
+						{
+							votersEl.innerText = voters[i].join(", ");
+						}
+						else
+						{
+							votersEl.innerText = "-";
+						}
+					}
+				}
 			}
 
 			// 質問一覧更新
