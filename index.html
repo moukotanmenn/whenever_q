@@ -145,7 +145,7 @@
 			display: flex;
 			flex-direction: column;
 			box-sizing: border-box;
-			justify-content: space-between;
+			/* justify-content: space-between; */
 		}
 		/* 質問スクロール */
 		.chat-scroll-area
@@ -380,7 +380,7 @@
 				</div>
 				
 				<!-- 集計開始・終了ボタン -->
-				<button onclick="toggleSession()" id="btn-session" style="width: 100%; padding: 16px; background: #10b981; color: white; font-size: 18px; margin-top: 15px;">集計を開始する</button>
+				<button onclick="toggleSession()" id="btn-session" style="width: 100%; padding: 16px; background: #10b981; color: white; font-size: 18px; margin-top: auto;">集計を開始する</button>
 			</div>
 			
 			<!-- 右パネル：質問一覧 -->
@@ -589,6 +589,15 @@
 		
 		const questionsRef = ref(db, `rooms/${currentRoomCode}/questions`);
 		
+		// 現在の時刻を取得
+		function getCurrentTime()
+		{
+			const now = new Date();
+			const hours = String(now.getHours()).padStart(2, '0');
+			const minutes = String(now.getMinutes()).padStart(2, '0');
+			return `${hours}:${minutes}`;
+		}
+		
 		// 画像が選択されている場合の処理
 		if(imageInput.files.length > 0)
 		{
@@ -604,7 +613,9 @@
 					name: myName,
 					text: text,
 					image: base64Image,
-					likes: 0
+					likes: 0,
+					time: getCurrentTime(),
+					resolved: false
 				});
 				
 				// 入力欄をクリア
@@ -621,10 +632,12 @@
 				name: myName,
 				text: text,
 				image: null,
-				likes: 0
+				likes: 0,
+				time: getCurrentTime(),
+				resolved: false
 			});
 			document.getElementById("input-question").value = "";
-		}
+		}		
 	};
 	
 	// 画像を拡大表示
@@ -702,6 +715,20 @@
 	{
 		const qRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}`);
 		await remove(qRef);
+	};
+	
+	// 解決済みボタン
+	window.toggleResolved = async function(qId)
+	{
+		const qRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}`);
+		const snapshot = await get(qRef);
+		if (!snapshot.exists()) return;
+		
+		const qData = snapshot.val();
+		const currentResolved = qData.resolved || false;
+		
+		// 状態を反転
+		await update(qRef, { resolved: !currentResolved });
 	};
 	
 	// 表示する画面について
@@ -820,27 +847,66 @@
 			{
 				// いいね順に並び替え
 				let qArray = Object.entries(data.questions).map(([id, val]) => ({ id, ...val }));
+				
+				console.log("サーバーから受け取った質問データ:", qArray);
 
-				// 共感数が多い順、新しい順に並び替え
+				// 並び替え
 				qArray.sort((a, b) => {
-					if (b.likes !== a.likes)
+					// 未解決が上
+					const aRes = (a.resolved === true) ? 1 : 0;
+					const bRes = (b.resolved === true) ? 1 : 0;
+					if (aRes !== bRes)
 					{
-						return b.likes - a.likes;
+						return aRes - bRes;
 					}
-					return b.id.localeCompare(a.id);
+					
+					// 両方同じの場合
+					if (a.resolved && b.resolved)
+					{
+						// 解決済みの中では送信時間が新しいものを上
+						const timeA = a.time || "";
+						const timeB = b.time || "";
+						return timeB.localeCompare(timeA);
+					}
+					else
+					{
+						// 未解決の中では共感数が多い順、次にID順
+						const likesA = a.likes || 0;
+						const likesB = b.likes || 0;
+						if (likesB !== likesA)
+						{
+							return likesB - likesA;
+						}
+						return b.id.localeCompare(a.id);
+					}
 				});
 
 				qArray.forEach(q => {
 					// 画像表示用パーツ
 					const imageHtml = q.image ? `<br><img src="${q.image}" class="thumbnail" onclick="openImageModal('${q.image}')">` : '';
+					const timeText = q.time ? `<span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">${q.time}</span>`:'';
 		
+					// 解決済みのスタイル
+					const isResolved = q.resolved || false;
+					const cardStyle = isResolved ? "opacity: 0.6; background: #f8fafc; border-left: 5px solid #94a3b8;" : "";
+					const resolvedBtnColor = isResolved ? "background: #64748b; color: white;" : "background: #f1f5f9; color: #334155;";
+					const resolvedBtnText = isResolved ? "解決済み (解除)" : "解決済みにする";
+					
+					// 権限判定
+					const isTeacherView = !document.getElementById("view-teacher").classList.contains("hidden");
+					const canToggleResolve = isTeacherView || (q.name === myName);
+					const resolveButtonHtml = canToggleResolve 
+						? `<button onclick="toggleResolved('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; margin-left: 5px; ${resolvedBtnColor}">${resolvedBtnText}</button>` 
+						: '';
+					
 					// 先生用の質問カード
 					const teacherCardHtml = `
-						<div class="question-card">
-							<strong>【${q.name}】</strong> ${q.text} <br>
+						<div class="question-card" style="${cardStyle}">
+							<strong>【${q.name}】</strong> ${q.text} ${timeText}<br>
 							${imageHtml}
 							<small>共感数: ${q.likes}</small>
 							<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
+							${resolveButtonHtml}
 						</div>
 					`;
 
@@ -855,12 +921,13 @@
 					const likeBtnText = userLikes ? "共感済み" : "共感する";
 	
 					const studentCardHtml = `
-						<div class="question-card">
-							${q.text} <br>
+						<div class="question-card" style="${cardStyle}">
+							${q.text} ${timeText}<br>
 							${imageHtml}
 							<small>共感数: ${q.likes}</small>
 							<button onclick="likeQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; ${likeBtnColor}">${likeBtnText}</button>
 							${deleteButtonHtml}
+							${resolveButtonHtml}
 						</div>
 					`;
 
@@ -897,6 +964,7 @@
 					studentListBox.innerHTML = '<span style="color: #94a3b8; font-size: 14px;">まだ誰も参加していません</span>';
 				}
 			}
+			
 		});
 	}
 </script>
