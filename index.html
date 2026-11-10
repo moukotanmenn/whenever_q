@@ -743,6 +743,41 @@
 		await update(qRef, { resolved: !currentResolved });
 	};
 	
+	// 返信入力欄
+	window.toggleReplyBox = function(qId)
+	{
+		const box = document.getElementById(`reply-box-${qId}`);
+		if (box)
+		{
+			box.style.display = box.style.display === "none" ? "block" : "none";
+		}
+	};
+	
+	// 返信を送信
+	window.sendReply = async function(qId)
+	{
+		const inputEl = document.getElementById(`reply-input-${qId}`);
+		if (!inputEl) return;
+		const text = inputEl.value.trim();
+		if (!text) return;
+
+		const repliesRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}/replies`);
+		
+		const now = new Date();
+		const hours = String(now.getHours()).padStart(2, '0');
+		const minutes = String(now.getMinutes()).padStart(2, '0');
+		const timeStr = `${hours}:${minutes}`;
+
+		// 返信データを保存
+		await push(repliesRef, {
+			name: myName,
+			text: text,
+			time: timeStr
+		});
+
+		inputEl.value = "";
+	};
+	
 	// 表示する画面について
 	function switchView(viewId)
 	{
@@ -914,15 +949,54 @@
 					const resolveButtonHtml = canToggleResolve 
 						? `<button onclick="toggleResolved('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; margin-left: 5px; ${resolvedBtnColor}">${resolvedBtnText}</button>` 
 						: '';
+						
+					// 返信一覧
+					let repliesHtml = '';
+					if (q.replies)
+					{
+						Object.entries(q.replies).forEach(([rId, rVal]) => {
+							// 先生画面かつ匿名設定がオフの場合のみ名前を表示（生徒間は常に匿名）
+							const shouldShowName = isTeacherView && !data.anonymousTeacher;
+							
+							const replyNameHtml = shouldShowName ? `<strong>【${rVal.name}】</strong> ` : '';
+							const replyTime = rVal.time ? `<span style="color: #94a3b8; font-size: 10px; margin-left: 6px;">${rVal.time}</span>` : '';
+							
+							repliesHtml += `
+								<div style="background: #f8fafc; border-left: 3px solid #cbd5e1; padding: 6px 10px; margin-top: 6px; border-radius: 4px; font-size: 13px;">
+									${replyNameHtml}${rVal.text} ${replyTime}
+								</div>
+							`;
+						});
+					}
+					
+					// 返信ボタンと入力欄
+					const replySectionHtml = `
+						<div style="margin-top: 8px;">
+							<button onclick="toggleReplyBox('${q.id}')" style="padding: 3px 8px; font-size: 11px; width: auto; background: #e2e8f0; color: #334155;">返信する</button>
+							<div id="reply-box-${q.id}" style="display: none; margin-top: 6px; padding-left: 10px; border-left: 2px solid #cbd5e1;">
+								<input type="text" id="reply-input-${q.id}" placeholder="返信を入力..." style="font-size: 14px; padding: 8px; margin: 4px 0; background: #fff;"></input>
+								<button onclick="sendReply('${q.id}')" style="padding: 4px 10px; font-size: 12px; width: auto; background: #0d9488;">返信を送信</button>
+							</div>
+							<div style="margin-top: 4px;">${repliesHtml}</div>
+						</div>
+					`;
+					
+					const teacherReplyViewOnlyHtml = repliesHtml ? `
+						<div style="margin-top: 8px; padding-left: 10px; border-left: 2px solid #cbd5e1;">
+							<div style="font-size: 12px; color: #64748b; margin-bottom: 2px;">生徒からの返信:</div>
+							${repliesHtml}
+						</div>
+					` : '';
 					
 					// 先生用の質問カード
 					const teacherCardHtml = `
 						<div class="question-card" style="${cardStyle}">
-							【${nameHtml}】 ${q.text} ${timeText}<br>
+							${nameHtml} ${q.text} ${timeText}<br>
 							${imageHtml}
 							<small>共感数: ${q.likes}</small>
 							<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
 							${resolveButtonHtml}
+							${teacherReplyViewOnlyHtml}
 						</div>
 					`;
 
@@ -944,6 +1018,7 @@
 							<button onclick="likeQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; margin-top: 5px; ${likeBtnColor}">${likeBtnText}</button>
 							${deleteButtonHtml}
 							${resolveButtonHtml}
+							${replySectionHtml}
 						</div>
 					`;
 
