@@ -488,11 +488,14 @@
 		const isAnonymousTeacher = document.getElementById("teacher-anonymous").checked;
 
 		// 部屋の初期データ作成
-		await set(ref(db, 'rooms/' + currentRoomCode),{
+		const roomRef = ref(db, 'rooms/' + currentRoomCode);
+		await set(roomRef, {
 			active: false,
 			anonymousTeacher: isAnonymousTeacher,
 			stamps: { 1: 0, 2: 0, 3: 0, 4: 0 }
 		});
+		
+		onDisconnect(roomRef).remove();
 
 		document.getElementById("display-roomcode").innerText = currentRoomCode;
 		document.getElementById("display-teacher-name").innerText = myName;
@@ -541,11 +544,19 @@
 	// 退出したとき
 	window.logout = async function()
 	{
-		if (currentRoomCode && myName)
+		const isTeacherView = !document.getElementById("view-teacher").classList.contains("hidden");
+		
+		if (isTeacherView && currentRoomCode)
+		{
+			// 先生が退出するとデータを削除
+			await remove(ref(db, 'rooms/' + currentRoomCode));
+		}
+		else if (currentRoomCode && myName)
 		{
 			await remove(ref(db, `rooms/${currentRoomCode}/students/${myName}`));
 			await remove(ref(db, `rooms/${currentRoomCode}/votes/${myName}`));
 		}
+		
 		currentRoomCode = null;
 		switchView("view-login");
 	};
@@ -820,7 +831,17 @@
 		// ルームのデータ監視
 		onValue(ref(db, 'rooms/' + currentRoomCode), (snapshot) => {
 			const data = snapshot.val();
-			if (!data) return;
+			if (!data)
+			{
+				const isStudentView = !document.getElementById("view-student").classList.contains("hidden");
+				if (isStudentView)
+				{
+					alert("先生が退出したため、ルームが終了しました。");
+					currentRoomCode = null;
+					switchView("view-login");
+				}
+				return;
+			}
 
 			// 授業ステータス更新
 			isClassActive = data.active;
