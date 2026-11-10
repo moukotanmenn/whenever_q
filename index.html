@@ -295,6 +295,14 @@
 				<div>
 					<h3>先生として利用</h3>
 					<p>新しい授業ルームを作成</p>
+					
+					<!-- 匿名設定ボタン -->
+					<div style="margin-top: 15px; text-align: left;">
+						<label style="font-size: 14px; color: #334155; display: flex; align-items: center; gap: 8px; cursor: pointer;">
+							<input type="checkbox" id="teacher-anonymous" style="width: auto; margin: 0; cursor: pointer;"></input>
+							質問の生徒名を匿名にする
+						</label>
+					</div>
 				</div>
 
 				<!-- ルーム作成ボタン -->
@@ -475,10 +483,14 @@
 	{
 		myName = document.getElementById("input-name").value.trim() || "先生";
 		currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString(); // 4桁のランダム数字
+		
+		// チェックボックスの状態を確認
+		const isAnonymousTeacher = document.getElementById("teacher-anonymous").checked;
 
 		// 部屋の初期データ作成
 		await set(ref(db, 'rooms/' + currentRoomCode),{
 			active: false,
+			anonymousTeacher: isAnonymousTeacher,
 			stamps: { 1: 0, 2: 0, 3: 0, 4: 0 }
 		});
 
@@ -886,6 +898,10 @@
 					const imageHtml = q.image ? `<br><img src="${q.image}" class="thumbnail" onclick="openImageModal('${q.image}')">` : '';
 					const timeText = q.time ? `<span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">${q.time}</span>`:'';
 		
+					// 匿名設定
+					const shouldHideName = data.anonymousTeacher || false;
+					const nameHtml = shouldHideName ? "" : `<strong>${q.name}</strong> `;
+		
 					// 解決済みのスタイル
 					const isResolved = q.resolved || false;
 					const cardStyle = isResolved ? "opacity: 0.6; background: #f8fafc; border-left: 5px solid #94a3b8;" : "";
@@ -902,7 +918,7 @@
 					// 先生用の質問カード
 					const teacherCardHtml = `
 						<div class="question-card" style="${cardStyle}">
-							<strong>【${q.name}】</strong> ${q.text} ${timeText}<br>
+							【${nameHtml}】 ${q.text} ${timeText}<br>
 							${imageHtml}
 							<small>共感数: ${q.likes}</small>
 							<button onclick="deleteQuestion('${q.id}')" style="padding: 4px 8px; font-size: 12px; width: auto; background: #dc3545; margin-left: 5px;">削除</button>
