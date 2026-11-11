@@ -5,6 +5,8 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"></meta>
 	<!-- Chart.js ライブラリ -->
 	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	<!-- html2pdf.js ライブラリ -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <title>Whenever Q</title>
     <style>
 		/* 画面全体 */
@@ -548,6 +550,14 @@
 		
 		if (isTeacherView && currentRoomCode)
 		{
+			// PDF保存を確認
+			const savePdf = confirm("授業データをPDFで保存しますか？\n（OKを押すとダウンロードが始まります）");
+			
+			if (savePdf)
+			{
+				await generateAndDownloadPdf();
+			}
+			
 			// 先生が退出するとデータを削除
 			await remove(ref(db, 'rooms/' + currentRoomCode));
 		}
@@ -570,20 +580,75 @@
 		});
 	};
 
-	// スタンプ集計
+	// スタンプ集計の開始・終了
 	window.toggleSession = async function()
 	{
-		isClassActive = !isClassActive;
+		const now = new Date();
+		const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 		
-		// 集計開始時にデータをリセット
-		const updateData =  { active: isClassActive };
-		if (isClassActive)
+		const roomRef = ref(db, 'rooms/' + currentRoomCode);
+		const snapshot = await get(roomRef);
+		const roomData = snapshot.val() || {};
+
+		const history = roomData.sessionHistory ? Object.values(roomData.sessionHistory) : [];
+
+		if (!isClassActive)
 		{
-			updateData.votes = null;
-			updateData.stamps = { 1: 0, 2:0, 3:0, 4:0, };
+			// ==========================
+			// 1. 【集計を開始する】ときの処理
+			// ==========================
+			isClassActive = true;
+
+			// 新しいセッション枠を履歴に追加
+			history.push({
+				startTime: timeStr,
+				endTime: "集計中...",
+				counts: { 1: 0, 2: 0, 3: 0, 4: 0 },
+				voters: { 1: [], 2: [], 3: [], 4: [] }
+			});
+
+			await update(roomRef, {
+				active: true,
+				votes: null, // 投票をリセット
+				stamps: { 1: 0, 2: 0, 3: 0, 4: 0 },
+				sessionHistory: history
+			});
 		}
-		
-		await update(ref(db, 'rooms/' + currentRoomCode), updateData);
+		else
+		{
+			// ==========================
+			// 2. 【集計を終了する】ときの処理
+			// ==========================
+			isClassActive = false;
+
+			// 直前の投票データを集計
+			let counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+			let voters = { 1: [], 2: [], 3: [], 4: [] };
+			
+			if (roomData.votes)
+			{
+				Object.entries(roomData.votes).forEach(([stName, vType]) => {
+					if (counts[vType] !== undefined)
+					{
+						counts[vType]++;
+						voters[vType].push(stName);
+					}
+				});
+			}
+
+			// 最後の履歴（いままで集計中だったもの）に終了時刻と結果を書き込む
+			if (history.length > 0)
+			{
+				history[history.length - 1].endTime = timeStr;
+				history[history.length - 1].counts = counts;
+				history[history.length - 1].voters = voters;
+			}
+
+			await update(roomRef, {
+				active: false,
+				sessionHistory: history
+			});
+		}
 	};
 
 	// スタンプ送信
@@ -823,6 +888,177 @@
 			plugins: { legend: { display: false } }
 			}
 		});
+	}
+	
+	// PDFを生成してダウンロードする関数
+	async function generateAndDownloadPdf()
+	{
+		const roomCodeToSave = currentRoomCode;
+		if (!roomCodeToSave) return;		
+		const roomSnapshot = await get(ref(db, 'rooms/' + roomCodeToSave));
+		if (!roomSnapshot.exists()) return;
+		const data = roomSnapshot.val();
+
+		// 1. 名簿
+		let studentsHtml = "<li>誰も参加していません</li>";
+		if (data.students)
+		{
+			studentsHtml = Object.keys(data.students).map(st => `<li>${st}</li>`).join("");
+		}
+
+		// 2. スタンプ集計履歴（各回ごとのグラフを生成して埋め込む）
+		let stampHistoryHtml = "<p>スタンプ集計の履歴はありません</p>";
+		const historyArray = data.sessionHistory ? Object.values(data.sessionHistory) : [];
+
+		if (historyArray.length > 0)
+		{
+			let historyHtmlParts = [];
+		
+			for (let i = 0; i < historyArray.length; i++)
+			{
+				const session = historyArray[i];
+				const startTime = session.startTime || "--:--";
+				const endTime = session.endTime || "--:--";
+				const c = session.counts || { 1: 0, 2: 0, 3: 0, 4: 0 };				
+			
+				const v1 = Array.isArray(session.voters?.[1]) ? session.voters[1] : [];
+				const v2 = Array.isArray(session.voters?.[2]) ? session.voters[2] : [];
+				const v3 = Array.isArray(session.voters?.[3]) ? session.voters[3] : [];
+				const v4 = Array.isArray(session.voters?.[4]) ? session.voters[4] : [];
+
+				// 💡 各回ごとの一時的なグラフ（Canvas）を裏で作成して画像に変換する
+				let chartImgTag = "";
+				try
+				{
+					const tempCanvas = document.createElement('canvas');
+					tempCanvas.width = 180;
+					tempCanvas.height = 180;
+					tempCanvas.style.display = 'none';
+					document.body.appendChild(tempCanvas);
+
+					const tempChart = new Chart(tempCanvas, {
+						type: 'doughnut',
+						data: {
+							labels: ['よくわかる', 'だいたい', 'むずかしい', 'わからない'],
+							datasets: [{
+								data: [c[1] || 0, c[2] || 0, c[3] || 0, c[4] || 0],
+								backgroundColor: ['#10b981', '#06b6d4', '#f59e0b', '#ef4444'],
+								borderWidth: 2
+							}]
+						},
+						options: {
+							responsive: false,
+							animation: false,
+							plugins: { legend: { display: false } }
+						}
+					});
+
+					const chartDataUrl = tempCanvas.toDataURL("image/png");
+					tempChart.destroy();
+					document.body.removeChild(tempCanvas);
+
+					if (chartDataUrl)
+					{
+						chartImgTag = `<div style="text-align: center; margin: 8px 0;"><img src="${chartDataUrl}" style="width: 100px; height: 100px;" /></div>`;
+					}
+				}
+				catch (err)
+				{
+					console.error("グラフの生成に失敗しました:", err);
+				}
+
+				historyHtmlParts.push(`
+					<div style="border: 1px solid #cbd5e1; padding: 10px; margin-bottom: 10px; border-radius: 6px; background: #f8fafc;">
+						<strong>第${i + 1}回 集計</strong> （${startTime} ～ ${endTime}）
+						${chartImgTag}
+						<ul style="margin: 5px 0; padding-left: 20px; font-size: 13px;">
+							<li>よくわかる: ${c[1] || 0}票 (${v1.length > 0 ? v1.join(', ') : '-'})</li>
+							<li>だいたい: ${c[2] || 0}票 (${v2.length > 0 ? v2.join(', ') : '-'})</li>
+							<li>むずかしい: ${c[3] || 0}票 (${v3.length > 0 ? v3.join(', ') : '-'})</li>
+							<li>わからない: ${c[4] || 0}票 (${v4.length > 0 ? v4.join(', ') : '-'})</li>
+						</ul>
+					</div>
+				`);
+			}
+			stampHistoryHtml = historyHtmlParts.join("");
+		}		
+
+		// 3. 質問一覧（未解決 / 解決済み）
+		let unresolvedQuestionsHtml = "<li>質問はありません</li>";
+		let resolvedQuestionsHtml = "<li>解決済みの質問はありません</li>";
+
+		if (data.questions)
+		{
+			let unresolved = [];
+			let resolved = [];
+
+			Object.entries(data.questions).forEach(([id, q]) => {
+				let repliesReportHtml = "";
+				if (q.replies)
+				{
+					const replyItems = Object.values(q.replies).map(r => {
+						return `<div style="font-size: 12px; color: #475569; margin-left: 15px; margin-top: 3px;">【${r.name}】 ${r.text} <span style="color: #94a3b8; font-size: 10px;">(${r.time || ''})</span></div>`;
+					}).join("");
+					repliesReportHtml = `<div style="margin-top: 5px; padding-left: 10px; border-left: 2px solid #cbd5e1;"><strong>返信:</strong>${replyItems}</div>`;
+				}
+
+				const qContent = `
+					<div style="margin-bottom: 8px;">
+						[共感: ${q.likes || 0}] <strong>${q.name}</strong>: ${q.text} <span style="font-size: 11px; color: #64748b;">(${q.time || ''})</span>
+						${repliesReportHtml}
+					</div>
+				`;
+
+				if (q.resolved)
+				{
+					resolved.push(`<li>${qContent}</li>`);
+				}
+				else
+				{
+					unresolved.push(`<li>${qContent}</li>`);
+				}
+			});
+
+			if (unresolved.length > 0) unresolvedQuestionsHtml = unresolved.join("");
+			if (resolved.length > 0) resolvedQuestionsHtml = resolved.join("");
+		}
+
+		// 印刷・PDF用のコンテナ作成
+		const container = document.createElement("div");
+		container.style.padding = "20px";
+		container.style.fontFamily = "sans-serif";
+		container.style.color = "#333";
+		container.style.background = "#fff";
+		container.style.width = "800px";
+
+		container.innerHTML = `
+			<h1 style="font-size: 24px; border-bottom: 2px solid #2563ed; padding-bottom: 8px; color: #2563ed;">授業レポート (ルーム番号: ${roomCodeToSave})</h1>					
+		
+			<h2 style="font-size: 18px; margin-top: 20px; color: #0f172a;">■ 参加生徒名簿</h2>				
+			<ul style="padding-left: 20px; font-size: 14px;">${studentsHtml}</ul>						
+		
+			<h2 style="font-size: 18px; margin-top: 20px; color: #0f172a;">■ スタンプ集計結果（全履歴）</h2>				
+			<div style="font-size: 14px;">${stampHistoryHtml}</div>						
+		
+			<h2 style="font-size: 18px; margin-top: 20px; color: #0f172a;">■ 未解決の質問一覧</h2>				
+			<ul style="padding-left: 20px; font-size: 14px; list-style-type: none;">${unresolvedQuestionsHtml}</ul>							
+		
+			<h2 style="font-size: 18px; margin-top: 20px; color: #0f172a;">■ 解決済みの質問一覧</h2>				
+			<ul style="padding-left: 20px; font-size: 14px; list-style-type: none;">${resolvedQuestionsHtml}</ul>
+		`;
+
+		document.body.appendChild(container);
+
+		const opt = {
+			margin:       10,
+			filename:     `授業レポート_ルーム${roomCodeToSave}.pdf`,
+			image:        { type: 'jpeg', quality: 0.98 },
+			html2canvas:  { scale: 2, useCORS: true },
+			jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+		};
+
+		await html2pdf().from(container).set(opt).save();
+		document.body.removeChild(container);
 	}
 
 	// その他表示
