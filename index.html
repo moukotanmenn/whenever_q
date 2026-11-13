@@ -667,36 +667,41 @@
 		alert("スタンプを送信しました");
 	};
 	
-	// 質問送信
+	// 時刻を取得する関数（あらかじめ外に出しておく）
+	function getCurrentTime()
+	{
+		const now = new Date();
+		const hours = String(now.getHours()).padStart(2, '0');
+		const minutes = String(now.getMinutes()).padStart(2, '0');
+		return `${hours}:${minutes}`;
+	}
+
 	window.sendQuestion = async function()
 	{
 		const text = document.getElementById("input-question").value.trim();
-		const imageInput = document.getElementById("input-image");
-		
-		if (!text && imageInput.files.length === 0) return; // テキストでも画像でもなければなにもなし
-		
-		const questionsRef = ref(db, `rooms/${currentRoomCode}/questions`);
-		
-		// 現在の時刻を取得
-		function getCurrentTime()
+		const imageInput = document.getElementById("input-image");		
+		if (!text && imageInput.files.length === 0) return;		
+	
+		if (text) 
 		{
-			const now = new Date();
-			const hours = String(now.getHours()).padStart(2, '0');
-			const minutes = String(now.getMinutes()).padStart(2, '0');
-			return `${hours}:${minutes}`;
-		}
-		
+			const isAllowed = await checkTextWithAI(text);
+			if (!isAllowed) 
+			{
+				alert("不適切な表現が含まれているため、質問を送信できません。");
+				return;
+			}
+		}		
+
+		const questionsRef = ref(db, `rooms/${currentRoomCode}/questions`);		
+
 		// 画像が選択されている場合の処理
 		if(imageInput.files.length > 0)
 		{
 			const file = imageInput.files[0];
-			const reader = new FileReader();
-			
+			const reader = new FileReader();			
 			reader.onload = async function(e)
 			{
-				const base64Image = e.target.result;
-				
-				// テキストと画像を一緒に保存
+				const base64Image = e.target.result;				
 				await push(questionsRef, {
 					name: myName,
 					text: text,
@@ -704,13 +709,10 @@
 					likes: 0,
 					time: getCurrentTime(),
 					resolved: false
-				});
-				
-				// 入力欄をクリア
+				});				
 				document.getElementById("input-question").value = "";
 				imageInput.value = "";
-			};
-			
+			};			
 			reader.readAsDataURL(file);
 		}
 		else
@@ -836,6 +838,13 @@
 		if (!inputEl) return;
 		const text = inputEl.value.trim();
 		if (!text) return;
+		
+		const isAllowed = await checkTextWithAI(text);
+		if (!isAllowed) 
+		{
+			alert("不適切な表現が含まれているため、返信を送信できません。");
+			return;
+		}
 
 		const repliesRef = ref(db, `rooms/${currentRoomCode}/questions/${qId}/replies`);
 		
@@ -1059,6 +1068,34 @@
 
 		await html2pdf().from(container).set(opt).save();
 		document.body.removeChild(container);
+	}
+	
+	async function checkTextWithAI(text) 
+	{
+		const endpoint = "https://gemini-filter.jiangxipianshan270.workers.dev/";
+
+		try 
+		{
+			const response = await fetch(endpoint, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ text: text })
+			});
+
+			const data = await response.json();
+			console.log("【デバッグ】サーバーからの返答:", data);
+
+			if (data.aiResponse) {
+				console.log("AIの判定文章:", data.aiResponse);
+			}
+
+			return data.isAllowed !== undefined ? data.isAllowed : true;
+		} 
+		catch (error) 
+		{
+			console.error("AIチェック通信エラー:", error);
+			return true; 
+		}
 	}
 
 	// その他表示
